@@ -1,12 +1,14 @@
 import discord
 from discord.ext import commands
-import re
-from dotenv import load_dotenv
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import os
-from aiohttp import web
-import asyncio
+import re
 
-load_dotenv()
+# Google Sheets authorization setup
+scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
+creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+client = gspread.authorize(creds)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -18,36 +20,62 @@ async def on_ready():
     print(f"✅ Bot is online as {bot.user}")
 
 @bot.command()
-async def send(ctx):
-    full_text = ctx.message.content
-    blocks = re.findall(r"```(.*?)```", full_text, re.DOTALL)
+async def send(ctx, sheet_url: str, date: str, until_row: int):
+    try:
+        # Extract the sheet ID from URL
+        match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', sheet_url)
+        if not match:
+            await ctx.send("❌ Invalid Google Sheets URL.")
+            return
+        sheet_id = match.group(1)
 
-    if not blocks:
-        await ctx.send("❌ No code blocks found.")
-        return
+        # Open the sheet
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.get_worksheet(0)  # you can adjust if needed
 
-    for block in blocks:
-        await ctx.send(f"```{block.strip()}```")
+        # Get all values in the sheet
+        all_values = worksheet.get_all_values()
 
-# Simple webserver handler
-async def handle(request):
-    return web.Response(text="Bot is running!")
+        # Find the column index of the date
+        header_row = all_values[0]  # assuming first row is header
+        col_idx = None
+        for i, cell in enumerate(header_row):
+            if cell.strip() == date:
+                col_idx = i
+                break
 
-async def run_webserver():
-    app = web.Application()
-    app.add_routes([web.get('/', handle)])
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get('PORT', 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"🌐 Webserver running on port {port}")
+        if col_idx is None:
+            await ctx.send(f"❌ Date '{date}' not found in header row.")
+            return
 
-async def main():
-    # Start both webserver and bot concurrently
-    await asyncio.gather(
-        run_webserver(),
-        bot.start(os.getenv("DISCORD_TOKEN"))
-    )
+        # Collect values from col_idx, col_idx+1, col_idx+2 for rows 1 to until_row (1-based indexing)
+        # Adjust row indexes because all_values is zero indexed
+        max_row = min(until_row, len(all_values) - 1)  # prevent index error
 
-asyncio.run(main())
+        response_lines = []
+        for row in range(1, max_row + 1):
+            row_values = all_values[row]
+            # Some rows might be shorter, fill with empty string if missing
+            vals = []
+            for c in range(col_idx, col_idx + 3):
+                if c < len(row_values):
+                    vals.append(row_values[c])
+                else:
+                    vals.append("")
+            response_lines.append(" | ".join(vals))
+
+        # Send the result in chunks to avoid Discord message limit (2000 chars)
+        message = ""
+        for line in response_lines:
+            if len(message) + len(line) + 1 > 1900:
+                await ctx.send(f"```\n{message}```")
+                message = ""
+            message += line + "\n"
+
+        if message:
+            await ctx.send(f"```\n{message}```")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error: {str(e)}")
+
+bot.run(os.getenv("DISCORD_TOKEN"))
