@@ -4,18 +4,18 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
 import re
+import json
+import asyncio
+from aiohttp import web
 
 # Google Sheets authorization setup
 scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
-import json
 
 # Load credentials from env var
 creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
 creds_dict = json.loads(creds_json)
 
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-client = gspread.authorize(creds)
-
 client = gspread.authorize(creds)
 
 intents = discord.Intents.default()
@@ -57,19 +57,14 @@ async def send(ctx, sheet_url: str, date: str, until_row: int):
             return
 
         # Collect values from col_idx, col_idx+1, col_idx+2 for rows 1 to until_row (1-based indexing)
-        # Adjust row indexes because all_values is zero indexed
         max_row = min(until_row, len(all_values) - 1)  # prevent index error
 
         response_lines = []
         for row in range(1, max_row + 1):
             row_values = all_values[row]
-            # Some rows might be shorter, fill with empty string if missing
             vals = []
             for c in range(col_idx, col_idx + 3):
-                if c < len(row_values):
-                    vals.append(row_values[c])
-                else:
-                    vals.append("")
+                vals.append(row_values[c] if c < len(row_values) else "")
             response_lines.append(" | ".join(vals))
 
         # Send the result in chunks to avoid Discord message limit (2000 chars)
@@ -86,4 +81,23 @@ async def send(ctx, sheet_url: str, date: str, until_row: int):
     except Exception as e:
         await ctx.send(f"❌ Error: {str(e)}")
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+# Minimal HTTP server for Render port binding
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def run_webserver():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+async def main():
+    await asyncio.gather(
+        run_webserver(),
+        bot.start(os.getenv("DISCORD_TOKEN"))
+    )
+
+asyncio.run(main())
