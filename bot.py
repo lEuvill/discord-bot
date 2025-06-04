@@ -7,7 +7,14 @@ import re
 
 # Google Sheets authorization setup
 scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+import json
+
+# Load credentials from env var
+creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+creds_dict = json.loads(creds_json)
+
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+client = gspread.authorize(creds)
 client = gspread.authorize(creds)
 
 intents = discord.Intents.default()
