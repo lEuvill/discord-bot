@@ -5,6 +5,9 @@ from oauth2client.service_account import ServiceAccountCredentials
 import os
 import re
 import json
+import asyncio
+from aiohttp import web
+import threading
 
 # Google Sheets authorization setup
 scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
@@ -102,4 +105,27 @@ async def send(ctx, sheet_url: str, sheet_name: str, date: str, until_row: int):
     except Exception as e:
         await ctx.send(f"❌ Error: {str(e)}")
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+async def health_check(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    port = int(os.environ.get('PORT', 8080))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 Web server started on port {port}")
+
+async def main():
+    # Start web server in background
+    await start_web_server()
+    
+    # Start Discord bot
+    await bot.start(os.getenv("DISCORD_TOKEN"))
+
+if __name__ == "__main__":
+    asyncio.run(main())
