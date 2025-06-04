@@ -3,6 +3,8 @@ from discord.ext import commands
 import re
 from dotenv import load_dotenv
 import os
+from aiohttp import web
+import asyncio
 
 load_dotenv()
 
@@ -27,4 +29,25 @@ async def send(ctx):
     for block in blocks:
         await ctx.send(f"```{block.strip()}```")
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+# Simple webserver handler
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def run_webserver():
+    app = web.Application()
+    app.add_routes([web.get('/', handle)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get('PORT', 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 Webserver running on port {port}")
+
+async def main():
+    # Start both webserver and bot concurrently
+    await asyncio.gather(
+        run_webserver(),
+        bot.start(os.getenv("DISCORD_TOKEN"))
+    )
+
+asyncio.run(main())
