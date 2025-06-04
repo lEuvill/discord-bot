@@ -118,36 +118,71 @@ async def send(ctx, sheet_url: str, sheet_name: str, date: str, max_row: int):
             
             response_lines.append(" | ".join(extracted_cols))
         
-        # Send the response in separate code block messages to avoid Discord's message limit
-        messages_to_send = []
-        current_message = ""
+        # Combine all extracted data into one string
+        full_data = "\n".join(response_lines)
         
-        for line in response_lines:
-            # Check if adding this line would exceed Discord's limit (2000 chars)
-            # Account for code block formatting (``` at start and end = 6 chars + newlines)
-            if len(current_message) + len(line) + 10 > 1900:
-                if current_message:
-                    messages_to_send.append(current_message.strip())
-                current_message = line + "\n"
-            else:
-                current_message += line + "\n"
+        # Find all code blocks in the data (content between ``` markers)
+        code_blocks = []
+        parts = full_data.split('```')
         
-        # Add any remaining content
-        if current_message:
-            messages_to_send.append(current_message.strip())
+        # Every odd-indexed part (1, 3, 5, etc.) is inside code blocks
+        for i in range(1, len(parts), 2):
+            if parts[i].strip():  # Only add non-empty blocks
+                code_blocks.append(parts[i].strip())
         
         # Send header message
         await ctx.send(f"📊 **Data from '{sheet_name}' (Rows 1-{max_row})**")
         
-        # Send each chunk as a separate code block message
-        for i, message_chunk in enumerate(messages_to_send, 1):
-            await ctx.send(f"```\n{message_chunk}\n```")
+        if code_blocks:
+            # Send each code block as a separate message
+            for i, code_block in enumerate(code_blocks, 1):
+                # Ensure the message doesn't exceed Discord's limit
+                if len(code_block) + 10 > 1900:  # Account for ``` formatting
+                    # If a single code block is too long, split it
+                    lines = code_block.split('\n')
+                    current_chunk = ""
+                    
+                    for line in lines:
+                        if len(current_chunk) + len(line) + 10 > 1900:
+                            if current_chunk:
+                                await ctx.send(f"```{current_chunk.strip()}```")
+                                await asyncio.sleep(0.5)
+                            current_chunk = line + "\n"
+                        else:
+                            current_chunk += line + "\n"
+                    
+                    if current_chunk:
+                        await ctx.send(f"```{current_chunk.strip()}```")
+                else:
+                    await ctx.send(f"```{code_block}```")
+                
+                # Small delay between messages to avoid rate limiting
+                if i < len(code_blocks):
+                    await asyncio.sleep(0.5)
             
-            # Small delay between messages to avoid rate limiting
-            if i < len(messages_to_send):
-                await asyncio.sleep(0.5)
-        
-        await ctx.send(f"✅ **Extraction complete!** Found {len(response_lines) - 2} data rows in {len(messages_to_send)} message(s).")
+            await ctx.send(f"✅ **Extraction complete!** Found {len(code_blocks)} code block(s) from {len(response_lines) - 2} data rows.")
+        else:
+            # If no code blocks found, send as regular formatted data
+            messages_to_send = []
+            current_message = ""
+            
+            for line in response_lines:
+                if len(current_message) + len(line) + 10 > 1900:
+                    if current_message:
+                        messages_to_send.append(current_message.strip())
+                    current_message = line + "\n"
+                else:
+                    current_message += line + "\n"
+            
+            if current_message:
+                messages_to_send.append(current_message.strip())
+            
+            for i, message_chunk in enumerate(messages_to_send, 1):
+                await ctx.send(f"```{message_chunk}```")
+                if i < len(messages_to_send):
+                    await asyncio.sleep(0.5)
+            
+            await ctx.send(f"✅ **Extraction complete!** Found {len(response_lines) - 2} data rows in {len(messages_to_send)} message(s). No code blocks detected.")
         
     except json.JSONDecodeError:
         await ctx.send("❌ Invalid Google credentials format in environment variables.")
