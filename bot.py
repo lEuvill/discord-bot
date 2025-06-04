@@ -91,21 +91,32 @@ async def send(ctx, sheet_url: str, sheet_name: str, date: str, max_row: int):
             await ctx.send(f"⚠️ Requested {max_row} rows but sheet only has {total_rows} data rows. Using {total_rows} rows.")
             max_row = total_rows
         
-        # Extract data from the found column only (not the next 2 columns)
+        # Extract data from the found column and next 2 columns
         response_lines = []
         
-        # Extract data rows from just the date column
+        # Add header for the 3 columns
+        header_cols = []
+        for c in range(date_col_idx, min(date_col_idx + 3, len(header_row))):
+            header_cols.append(header_row[c] if c < len(header_row) else "")
+        response_lines.append(" | ".join(header_cols))
+        response_lines.append("-" * 50)  # Separator line
+        
+        # Extract data rows
         for row_idx in range(1, max_row + 1):
             if row_idx >= len(all_values):
                 break
             
             row_values = all_values[row_idx]
+            extracted_cols = []
             
-            # Get only the content from the date column
-            if date_col_idx < len(row_values):
-                cell_content = row_values[date_col_idx].strip()
-                if cell_content:  # Only add non-empty content
-                    response_lines.append(cell_content)
+            # Get the 3 columns starting from date_col_idx
+            for c in range(date_col_idx, date_col_idx + 3):
+                if c < len(row_values):
+                    extracted_cols.append(row_values[c].strip())
+                else:
+                    extracted_cols.append("")
+            
+            response_lines.append(" | ".join(extracted_cols))
         
         # Combine all extracted data into one string
         full_data = "\n".join(response_lines)
@@ -149,7 +160,7 @@ async def send(ctx, sheet_url: str, sheet_name: str, date: str, max_row: int):
                 if i < len(code_blocks):
                     await asyncio.sleep(0.5)
             
-            await ctx.send(f"✅ **Extraction complete!** Found {len(code_blocks)} code block(s) from {len(response_lines)} data rows.")
+            await ctx.send(f"✅ **Extraction complete!** Found {len(code_blocks)} code block(s) from {len(response_lines) - 2} data rows.")
         else:
             # If no code blocks found, send as regular formatted data
             messages_to_send = []
@@ -171,7 +182,7 @@ async def send(ctx, sheet_url: str, sheet_name: str, date: str, max_row: int):
                 if i < len(messages_to_send):
                     await asyncio.sleep(0.5)
             
-            await ctx.send(f"✅ **Extraction complete!** Found {len(response_lines)} data rows in {len(messages_to_send)} message(s). No code blocks detected.")
+            await ctx.send(f"✅ **Extraction complete!** Found {len(response_lines) - 2} data rows in {len(messages_to_send)} message(s). No code blocks detected.")
         
     except json.JSONDecodeError:
         await ctx.send("❌ Invalid Google credentials format in environment variables.")
