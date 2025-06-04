@@ -27,6 +27,10 @@ async def on_ready():
     print(f"✅ Bot is online as {bot.user}")
 
 @bot.command()
+async def ping(ctx):
+    await ctx.send("🏓 Pong! Bot is working!")
+
+@bot.command()
 async def send(ctx, sheet_url: str, sheet_name: str, date: str, until_row: int):
     try:
         # Extract the sheet ID from URL
