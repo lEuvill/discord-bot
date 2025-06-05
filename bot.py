@@ -69,7 +69,7 @@ async def send(ctx, sheet_url: str, sheet_name: str, date: str, max_row: int):
             return
         
         # Find the date column in the header row
-        header_row = all_values[0]
+        header_row = all_values[2]
         date_col_idx = None
         
         for i, cell in enumerate(header_row):
