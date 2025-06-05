@@ -24,17 +24,140 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="r!", intents=intents)
 
+# In-memory storage for variables
+bot_variables = {
+    'links': {},
+    'sheet_names': {},
+    'row_max': {}
+}
+
 @bot.event
 async def on_ready():
     print(f"✅ Bot is online as {bot.user}")
 
 @bot.command()
-async def send(ctx, sheet_url: str, sheet_name: str, date: str, max_row: int):
+async def set(ctx, variable: str, *args):
     """
-    Extract data from Google Sheets based on date column and row limit.
-    Usage: r!send [sheet_url] [sheet_name] [date] [max_row]
+    Set variables for links, sheet names, and row max values.
+    Usage: 
+    - r!set [link] to [variable_name]
+    - r!set [variable_name] [sheet_name] to [sheet_name_value]
+    - r!set [variable_name] [row_max] to [row_max_value]
     """
     try:
+        args_text = " ".join(args)
+        
+        # Check if it's setting a link
+        if args_text.startswith("to "):
+            # This is setting a link: r!set [link] to [variable_name]
+            link = variable
+            variable_name = args_text[3:].strip()  # Remove "to " and get variable name
+            
+            # Validate URL format
+            if not re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', link):
+                await ctx.send("❌ Invalid Google Sheets URL format.")
+                return
+            
+            bot_variables['links'][variable_name] = link
+            await ctx.send(f"✅ Link set: `{variable_name}` = `{link}`")
+            return
+        
+        # Check if it's setting sheet name or row max
+        if len(args) >= 3 and args[-2] == "to":
+            property_type = args[0]  # Should be sheet name, row max, etc.
+            property_value = args[-1]  # The value after "to"
+            
+            if property_type.lower() in ["sheet", "sheetname", "sheet_name"]:
+                bot_variables['sheet_names'][variable] = property_value
+                await ctx.send(f"✅ Sheet name set: `{variable}` sheet name = `{property_value}`")
+                return
+            
+            elif property_type.lower() in ["row", "rowmax", "row_max", "max_row"]:
+                try:
+                    row_value = int(property_value)
+                    if row_value < 1:
+                        await ctx.send("❌ Row max must be at least 1.")
+                        return
+                    bot_variables['row_max'][variable] = row_value
+                    await ctx.send(f"✅ Row max set: `{variable}` row max = `{row_value}`")
+                    return
+                except ValueError:
+                    await ctx.send("❌ Row max must be a valid number.")
+                    return
+        
+        # If we get here, the format wasn't recognized
+        await ctx.send("""❌ Invalid format. Use one of these:
+```
+r!set [link] to [variable_name]
+r!set [variable_name] [sheet_name] to [sheet_name_value]
+r!set [variable_name] [row_max] to [row_max_value]
+```
+
+**Examples:**
+```
+r!set https://docs.google.com/.../edit to CA
+r!set CA sheet_name to Daily-Audit-June
+r!set CA row_max to 290
+```""")
+        
+    except Exception as e:
+        await ctx.send(f"❌ Error setting variable: {str(e)}")
+
+@bot.command()
+async def send(ctx, sheet_identifier: str, *args):
+    """
+    Extract data from Google Sheets. Can use variables or full parameters.
+    Usage: 
+    - r!send [variable_name] [date] (if variable has sheet_name and row_max set)
+    - r!send [variable_name] [sheet_name] [date] [max_row] (if variable only has link)
+    - r!send [sheet_url] [sheet_name] [date] [max_row] (original format)
+    """
+    try:
+        # Check if sheet_identifier is a variable (stored link)
+        if sheet_identifier in bot_variables['links']:
+            sheet_url = bot_variables['links'][sheet_identifier]
+            
+            # Check if we have stored sheet_name and row_max for this variable
+            if (sheet_identifier in bot_variables['sheet_names'] and 
+                sheet_identifier in bot_variables['row_max']):
+                
+                # Format: r!send [variable] [date]
+                if len(args) == 1:
+                    sheet_name = bot_variables['sheet_names'][sheet_identifier]
+                    date = args[0]
+                    max_row = bot_variables['row_max'][sheet_identifier]
+                else:
+                    await ctx.send(f"❌ Expected format: `r!send {sheet_identifier} [date]`")
+                    return
+                    
+            else:
+                # Format: r!send [variable] [sheet_name] [date] [max_row]
+                if len(args) == 3:
+                    sheet_name = args[0]
+                    date = args[1]
+                    try:
+                        max_row = int(args[2])
+                    except ValueError:
+                        await ctx.send("❌ max_row must be a valid number.")
+                        return
+                else:
+                    await ctx.send(f"❌ Expected format: `r!send {sheet_identifier} [sheet_name] [date] [max_row]`")
+                    return
+        else:
+            # Original format: r!send [sheet_url] [sheet_name] [date] [max_row]
+            if len(args) == 3:
+                sheet_url = sheet_identifier
+                sheet_name = args[0]
+                date = args[1]
+                try:
+                    max_row = int(args[2])
+                except ValueError:
+                    await ctx.send("❌ max_row must be a valid number.")
+                    return
+            else:
+                await ctx.send("❌ Invalid format. Use `r!help_send` for usage instructions.")
+                return
+        
         # Extract sheet ID from URL
         match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', sheet_url)
         if not match:
@@ -186,29 +309,98 @@ async def send(ctx, sheet_url: str, sheet_name: str, date: str, max_row: int):
         print(f"Error in send command: {str(e)}")
 
 @bot.command()
+async def vars(ctx):
+    """Show all stored variables"""
+    if not any([bot_variables['links'], bot_variables['sheet_names'], bot_variables['row_max']]):
+        await ctx.send("📋 No variables set yet.")
+        return
+    
+    embed = discord.Embed(title="📋 Stored Variables", color=0x00ff00)
+    
+    if bot_variables['links']:
+        links_text = "\n".join([f"`{var}` = `{url[:50]}...`" if len(url) > 50 else f"`{var}` = `{url}`" 
+                               for var, url in bot_variables['links'].items()])
+        embed.add_field(name="🔗 Links", value=links_text, inline=False)
+    
+    if bot_variables['sheet_names']:
+        sheets_text = "\n".join([f"`{var}` = `{sheet}`" 
+                                for var, sheet in bot_variables['sheet_names'].items()])
+        embed.add_field(name="📝 Sheet Names", value=sheets_text, inline=False)
+    
+    if bot_variables['row_max']:
+        rows_text = "\n".join([f"`{var}` = `{rows}`" 
+                              for var, rows in bot_variables['row_max'].items()])
+        embed.add_field(name="📊 Row Max", value=rows_text, inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def clear_vars(ctx, variable_name: str = None):
+    """Clear variables. Usage: r!clear_vars [variable_name] or r!clear_vars all"""
+    if variable_name is None:
+        await ctx.send("❌ Specify a variable name or 'all' to clear everything.")
+        return
+    
+    if variable_name.lower() == "all":
+        bot_variables['links'].clear()
+        bot_variables['sheet_names'].clear()
+        bot_variables['row_max'].clear()
+        await ctx.send("✅ All variables cleared.")
+        return
+    
+    cleared = []
+    if variable_name in bot_variables['links']:
+        del bot_variables['links'][variable_name]
+        cleared.append("link")
+    
+    if variable_name in bot_variables['sheet_names']:
+        del bot_variables['sheet_names'][variable_name]
+        cleared.append("sheet name")
+    
+    if variable_name in bot_variables['row_max']:
+        del bot_variables['row_max'][variable_name]
+        cleared.append("row max")
+    
+    if cleared:
+        await ctx.send(f"✅ Cleared {variable_name}: {', '.join(cleared)}")
+    else:
+        await ctx.send(f"❌ Variable '{variable_name}' not found.")
+
+@bot.command()
 async def help_send(ctx):
     """Show help for the send command"""
     help_text = """
 📋 **Send Command Help**
 
-**Usage:** `r!send [sheet_url] [sheet_name] [date] [max_row]`
+**Original Usage:** `r!send [sheet_url] [sheet_name] [date] [max_row]`
 
-**Parameters:**
-• `sheet_url` - Full Google Sheets URL
-• `sheet_name` - Name of the specific sheet/tab
-• `date` - Header value to search for (must match exactly)
-• `max_row` - Maximum number of rows to extract (starting from row 1)
+**With Variables:**
+• `r!send [variable] [date]` - If variable has link, sheet name, and row max set
+• `r!send [variable] [sheet_name] [date] [max_row]` - If variable only has link set
 
-**Example:**
+**Setting Variables:**
 ```
-r!send https://docs.google.com/spreadsheets/d/10aUOWH2VDtiLIBUxBRdf1cRtLhT3KXaGBlp6MuNSxC4/edit sheet3 "June 4, 2025" 118
+r!set [link] to [variable_name]
+r!set [variable_name] sheet_name to [sheet_name_value]
+r!set [variable_name] row_max to [row_max_value]
 ```
 
-**Notes:**
-• The bot will extract the found date column plus the next 2 columns
-• Make sure the bot has access to your Google Sheet
-• Sheet names are case-sensitive
-• Date values must match the header exactly
+**Example Setup:**
+```
+r!set https://docs.google.com/.../edit to CA
+r!set CA sheet_name to Daily-Audit-June
+r!set CA row_max to 290
+```
+
+**Then use simply:**
+```
+r!send CA "June 5, 2025"
+```
+
+**Other Commands:**
+• `r!vars` - Show all stored variables
+• `r!clear_vars [variable_name]` - Clear specific variable
+• `r!clear_vars all` - Clear all variables
     """
     await ctx.send(help_text)
 
