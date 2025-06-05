@@ -91,60 +91,21 @@ async def send(ctx, sheet_url: str, sheet_name: str, date: str, max_row: int):
             await ctx.send(f"⚠️ Requested {max_row} rows but sheet only has {total_rows} data rows. Using {total_rows} rows.")
             max_row = total_rows
         
-        # Extract data from the found column and optionally next 2 columns
+        # Extract data from the found column only (not the next 2 columns)
         response_lines = []
         
-        # First, let's check what we're actually getting from the sheet
-        for row_idx in range(1, min(6, len(all_values))):  # Check first 5 rows for debugging
-            if row_idx >= len(all_values):
-                break
-            
-            row_values = all_values[row_idx]
-            
-            # Check the date column content
-            date_col_content = row_values[date_col_idx] if date_col_idx < len(row_values) else ""
-            
-            # Check if content spans multiple columns (maybe it's split across columns)
-            next_col_1 = row_values[date_col_idx + 1] if (date_col_idx + 1) < len(row_values) else ""
-            next_col_2 = row_values[date_col_idx + 2] if (date_col_idx + 2) < len(row_values) else ""
-            
-            # If the main column has content but looks incomplete, combine with next columns
-            if date_col_content and (next_col_1 or next_col_2):
-                # Content might be spread across columns, combine them
-                combined_content = date_col_content
-                if next_col_1:
-                    combined_content += " " + next_col_1
-                if next_col_2:
-                    combined_content += " " + next_col_2
-                response_lines.append(combined_content)
-            elif date_col_content:
-                response_lines.append(date_col_content)
-        
-        # Now extract all the data properly
+        # Extract data rows from just the date column
         for row_idx in range(1, max_row + 1):
             if row_idx >= len(all_values):
                 break
             
             row_values = all_values[row_idx]
             
-            # Get content from the date column
-            date_col_content = row_values[date_col_idx] if date_col_idx < len(row_values) else ""
-            
-            # Check if we need to combine with adjacent columns
-            next_col_1 = row_values[date_col_idx + 1] if (date_col_idx + 1) < len(row_values) else ""
-            next_col_2 = row_values[date_col_idx + 2] if (date_col_idx + 2) < len(row_values) else ""
-            
-            # Combine columns if there's content in adjacent columns
-            if date_col_content and (next_col_1.strip() or next_col_2.strip()):
-                combined_content = date_col_content
-                if next_col_1.strip():
-                    combined_content += " " + next_col_1
-                if next_col_2.strip():
-                    combined_content += " " + next_col_2
-                if combined_content.strip():
-                    response_lines.append(combined_content)
-            elif date_col_content.strip():
-                response_lines.append(date_col_content)
+            # Get only the content from the date column
+            if date_col_idx < len(row_values):
+                cell_content = row_values[date_col_idx].strip()
+                if cell_content:  # Only add non-empty content
+                    response_lines.append(cell_content)
         
         # Combine all extracted data into one string
         full_data = "\n".join(response_lines)
