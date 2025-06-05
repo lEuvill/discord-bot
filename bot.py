@@ -91,60 +91,27 @@ async def send(ctx, sheet_url: str, sheet_name: str, date: str, max_row: int):
             await ctx.send(f"⚠️ Requested {max_row} rows but sheet only has {total_rows} data rows. Using {total_rows} rows.")
             max_row = total_rows
         
-        # Extract data from the found column and optionally next 2 columns
+        # Extract data from the found column and next 2 columns (3 columns total)
+        # Copy it like Windows copy-paste (tab-separated, then join naturally)
         response_lines = []
         
-        # First, let's check what we're actually getting from the sheet
-        for row_idx in range(1, min(6, len(all_values))):  # Check first 5 rows for debugging
-            if row_idx >= len(all_values):
-                break
-            
-            row_values = all_values[row_idx]
-            
-            # Check the date column content
-            date_col_content = row_values[date_col_idx] if date_col_idx < len(row_values) else ""
-            
-            # Check if content spans multiple columns (maybe it's split across columns)
-            next_col_1 = row_values[date_col_idx + 1] if (date_col_idx + 1) < len(row_values) else ""
-            next_col_2 = row_values[date_col_idx + 2] if (date_col_idx + 2) < len(row_values) else ""
-            
-            # If the main column has content but looks incomplete, combine with next columns
-            if date_col_content and (next_col_1 or next_col_2):
-                # Content might be spread across columns, combine them
-                combined_content = date_col_content
-                if next_col_1:
-                    combined_content += " " + next_col_1
-                if next_col_2:
-                    combined_content += " " + next_col_2
-                response_lines.append(combined_content)
-            elif date_col_content:
-                response_lines.append(date_col_content)
-        
-        # Now extract all the data properly
+        # Extract data rows from the 3 columns starting from date column
         for row_idx in range(1, max_row + 1):
             if row_idx >= len(all_values):
                 break
             
             row_values = all_values[row_idx]
             
-            # Get content from the date column
-            date_col_content = row_values[date_col_idx] if date_col_idx < len(row_values) else ""
+            # Get the 3 columns starting from date_col_idx
+            col1 = row_values[date_col_idx] if date_col_idx < len(row_values) else ""
+            col2 = row_values[date_col_idx + 1] if (date_col_idx + 1) < len(row_values) else ""
+            col3 = row_values[date_col_idx + 2] if (date_col_idx + 2) < len(row_values) else ""
             
-            # Check if we need to combine with adjacent columns
-            next_col_1 = row_values[date_col_idx + 1] if (date_col_idx + 1) < len(row_values) else ""
-            next_col_2 = row_values[date_col_idx + 2] if (date_col_idx + 2) < len(row_values) else ""
+            # Join them with tabs (like Windows copy-paste behavior)
+            combined_row = f"{col1}\t{col2}\t{col3}".rstrip('\t')
             
-            # Combine columns if there's content in adjacent columns
-            if date_col_content and (next_col_1.strip() or next_col_2.strip()):
-                combined_content = date_col_content
-                if next_col_1.strip():
-                    combined_content += " " + next_col_1
-                if next_col_2.strip():
-                    combined_content += " " + next_col_2
-                if combined_content.strip():
-                    response_lines.append(combined_content)
-            elif date_col_content.strip():
-                response_lines.append(date_col_content)
+            if combined_row.strip():  # Only add non-empty rows
+                response_lines.append(combined_row)
         
         # Combine all extracted data into one string
         full_data = "\n".join(response_lines)
